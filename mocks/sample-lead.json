@@ -1,0 +1,60 @@
+{
+  "address": "123 Maple St, Lexington, MA 02420",
+  "town": "Lexington",
+  "townZips": ["02420", "02421"],
+  "listing": {
+    "status": "Expired",
+    "daysOnMarket": 63,
+    "expiredDate": "2025-12-10",
+    "listDate": "2025-10-08",
+    "finalListPrice": 1199000,
+    "originalListPrice": 1299000,
+    "priceReductionsCount": 2,
+    "totalPriceReductionPct": 7.7,
+    "zillowUrl": "https://www.zillow.com/"
+  },
+  "home": {
+    "beds": 4,
+    "baths": 3,
+    "sqft": 2450,
+    "lotSqft": 9100,
+    "yearBuilt": 1978,
+    "propertyType": "Single Family"
+  },
+  "agent": {
+    "name": "Jordan Lee",
+    "brokerage": "Example Realty",
+    "zipTransactionsLast12Mo": 12,
+    "totalTransactionsLast12Mo": 34,
+    "overAskCount": 7,
+    "underAskCount": 5,
+    "avgDomAgent": 24,
+    "avgDomZip": 18,
+    "priceReductionPctAgent": 38,
+    "priceReductionPctZip": 22,
+    "closestTransactions": [
+      { "address": "10 Oak Rd", "soldDate": "2025-11-22", "soldPrice": 1210000, "distanceMiles": 1.2 },
+      { "address": "55 Pine Ln", "soldDate": "2025-10-05", "soldPrice": 1175000, "distanceMiles": 2.8 }
+    ]
+  },
+  "topAgents": [
+    { "name": "Ava Patel", "brokerage": "Nextburb Partner", "townZipsTxLast12Mo": 28, "avgDom": 14, "listToSaleRatio": 1.03, "overAskPct": 52 },
+    { "name": "Mason Kim", "brokerage": "Nextburb Partner", "townZipsTxLast12Mo": 21, "avgDom": 16, "listToSaleRatio": 1.01, "overAskPct": 41 },
+    { "name": "Sofia Chen", "brokerage": "Nextburb Partner", "townZipsTxLast12Mo": 18, "avgDom": 19, "listToSaleRatio": 1.0, "overAskPct": 33 }
+  ],
+  "cma": {
+    "comps": [
+      { "address": "12 Cedar St", "beds": 4, "baths": 3, "sqft": 2380, "lotSqft": 8800, "yearBuilt": 1980, "soldDate": "2025-12-01", "soldPrice": 1225000 },
+      { "address": "88 Birch Ave", "beds": 4, "baths": 2, "sqft": 2510, "lotSqft": 9400, "yearBuilt": 1975, "soldDate": "2025-11-12", "soldPrice": 1180000 },
+      { "address": "7 Spruce Way", "beds": 5, "baths": 3, "sqft": 2700, "lotSqft": 10000, "yearBuilt": 1988, "soldDate": "2025-09-20", "soldPrice": 1295000 }
+    ]
+  },
+  "market": {
+    "medianSoldPrice": 1205000,
+    "medianSoldPriceYoYPct": 4.1,
+    "medianDom": 19,
+    "inventoryActive": 47,
+    "priceReductionsPct": 28,
+    "listToSaleRatio": 1.01
+  }
+}
