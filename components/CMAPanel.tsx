@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Lead, Comp } from '../types';
 import { computeMedian } from '../utils/insights';
 import { formatDateDisplay, getZillowLink } from '../utils/formatters';
@@ -20,29 +20,43 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
   const isTexasLead = lead.address.split(',').some(part => part.trim().toUpperCase() === 'TX') || 
                       lead.address.toUpperCase().includes(', TX ');
 
-  // Standard filtering range is 5%
-  const filterPercentage = 0.05;
-  const minPrice = subjectOrigPrice * (1 - filterPercentage);
-  const maxPrice = subjectOrigPrice * (1 + filterPercentage);
+  // Progressive Filtering Logic
+  const { displayedComps, activeTier } = useMemo(() => {
+    const isSameZip = (c: Comp) => !subjectZip || (c.zip ? String(c.zip).padStart(5, '0') : '') === subjectZip;
+    const sameZipComps = allCompsFromZip.filter(isSameZip);
 
-  // Apply filtering logic: 
-  // If TX lead, we return all same-zip comps without price filtering.
-  // If not TX lead, we filter by +/- 5%.
-  const priceFilteredComps = allCompsFromZip.filter(c => {
-    const compZip = c.zip ? String(c.zip).padStart(5, '0') : '';
-    const isSameZip = !subjectZip || compZip === subjectZip;
-    
+    // TX Exception: Always show full market view
     if (isTexasLead) {
-      return isSameZip;
+      return { 
+        displayedComps: sameZipComps, 
+        activeTier: 'Texas Full Market View' 
+      };
     }
-    
-    const withinPriceRange = c.soldPrice >= minPrice && c.soldPrice <= maxPrice;
-    return withinPriceRange && isSameZip;
-  });
 
-  // Logic to determine UI labels: For TX leads we consider it "not using price filter" to reflect that we're showing everything.
-  const isUsingPriceFilter = !isTexasLead && priceFilteredComps.length > 0;
-  const displayedComps = priceFilteredComps.length > 0 ? priceFilteredComps : allCompsFromZip;
+    // Step 1: ±5% Price Range
+    const tier1 = sameZipComps.filter(c => 
+      c.soldPrice >= subjectFinalAsk * 0.95 && c.soldPrice <= subjectFinalAsk * 1.05
+    );
+    if (tier1.length > 0) return { displayedComps: tier1, activeTier: '±5% Price Match' };
+
+    // Step 2: ±10% Price Range (Fallback 1)
+    const tier2 = sameZipComps.filter(c => 
+      c.soldPrice >= subjectFinalAsk * 0.90 && c.soldPrice <= subjectFinalAsk * 1.10
+    );
+    if (tier2.length > 0) return { displayedComps: tier2, activeTier: '±10% Price Match' };
+
+    // Step 3: +15% / −10% Range (Fallback 2)
+    const tier3 = sameZipComps.filter(c => 
+      c.soldPrice >= subjectFinalAsk * 0.90 && c.soldPrice <= subjectFinalAsk * 1.15
+    );
+    if (tier3.length > 0) return { displayedComps: tier3, activeTier: '+15% / -10% Price Match' };
+
+    // Step 4: ZIP-Only Fallback
+    return { 
+      displayedComps: sameZipComps, 
+      activeTier: 'ZIP Code Full Market' 
+    };
+  }, [allCompsFromZip, subjectZip, subjectFinalAsk, isTexasLead]);
   
   // Sort comps by sold date (latest first)
   const sortedComps = [...displayedComps].sort((a, b) => {
@@ -70,11 +84,11 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-            {isTexasLead ? 'ZIP Median (Unfiltered)' : isUsingPriceFilter ? 'Comp Median Price' : 'ZIP Code Median Price'}
+            {isTexasLead ? 'ZIP Median (Unfiltered)' : 'Comp Median Price'}
           </p>
           <p className="text-2xl font-black text-slate-900">${(medianPrice || 0).toLocaleString()}</p>
           <p className="text-[10px] font-bold text-blue-600 mt-1">
-            Based on {displayedComps.length} {isTexasLead ? 'total local' : (isUsingPriceFilter ? 'price-matched' : 'total local')} sales
+            Based on {displayedComps.length} total local sales
           </p>
         </div>
 
@@ -98,9 +112,7 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
             <p className="text-[10px] font-medium text-slate-400 mt-0.5">
               {isTexasLead 
                 ? "Showing all sold properties in this ZIP code (Price range filtering disabled for TX)" 
-                : isUsingPriceFilter 
-                  ? `Filtered for +/- ${(filterPercentage * 100).toFixed(0)}% of Subject Orig List ($${subjectOrigPrice.toLocaleString()})`
-                  : `Showing all local sales (No close price matches found for +/- ${(filterPercentage * 100).toFixed(0)}% tier)`}
+                : `Selection Tier: ${activeTier} ($${subjectFinalAsk.toLocaleString()} Base)`}
             </p>
           </div>
           <div className="flex gap-2">
@@ -121,7 +133,6 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {sortedComps.length > 0 ? sortedComps.map((comp, idx) => {
-                // Formatting according to the requested pattern: Street, City, State ZIP
                 const stateAndZip = `${comp.state || ''} ${comp.zip || subjectZip || ''}`.trim();
                 const addressParts = [comp.address, comp.city, stateAndZip].filter(Boolean);
                 const fullFormattedAddress = addressParts.join(', ').replace(/\s+/g, ' ').trim();
@@ -178,7 +189,7 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
           
           <div className="bg-slate-50/50 rounded-2xl border border-slate-100 p-6 md:p-8">
             <p className="text-[15px] text-slate-600 leading-relaxed font-medium">
-              Based on an analysis of <span className="text-slate-900 font-extrabold underline decoration-blue-200 decoration-4 underline-offset-4">{displayedComps.length} sales</span> within the immediate ZIP code, the subject property at <a href={lead.zillowLink} target="_blank" rel="noopener noreferrer" className="font-extrabold text-slate-900 hover:text-blue-600 hover:underline transition-all">{street}</a> shows a <span className={`font-extrabold ${priceDelta > 0 ? 'text-red-600' : 'text-emerald-600'} bg-white px-2 py-0.5 rounded-lg border border-slate-100 shadow-sm`}>{Math.abs(Number(priceDeltaPct))}% price variance</span> relative to the local {isTexasLead ? 'market' : (isUsingPriceFilter ? 'comparable' : 'market')} median. 
+              Based on an analysis of <span className="text-slate-900 font-extrabold underline decoration-blue-200 decoration-4 underline-offset-4">{displayedComps.length} sales</span> within the immediate ZIP code, the subject property at <a href={lead.zillowLink} target="_blank" rel="noopener noreferrer" className="font-extrabold text-slate-900 hover:text-blue-600 hover:underline transition-all">{street}</a> shows a <span className={`font-extrabold ${priceDelta > 0 ? 'text-red-600' : 'text-emerald-600'} bg-white px-2 py-0.5 rounded-lg border border-slate-100 shadow-sm`}>{Math.abs(Number(priceDeltaPct))}% price variance</span> relative to the local {isTexasLead ? 'market' : 'comparable'} median. 
               {priceDelta > 0 ? (
                 <> The property's final list price of <span className="font-bold text-slate-900">${(subjectFinalAsk).toLocaleString()}</span> was positioned <span className="font-bold text-red-600">${Math.abs(priceDelta).toLocaleString()} above</span> the neighborhood sold median of <span className="font-bold text-slate-900">${(medianPrice || 0).toLocaleString()}</span>. This premium placement likely created a "value friction" point for local buyers who were benchmarking against similar results nearby.</>
               ) : (

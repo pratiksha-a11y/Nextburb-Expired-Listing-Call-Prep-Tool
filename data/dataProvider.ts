@@ -98,18 +98,36 @@ export const fetchCmaComps = async (zipCode: string, origListPrice: number) => {
   }
 };
 
-export const fetchTopAgentsByZip = async (zip: string): Promise<ZipTopAgent[]> => {
+/**
+ * FETCH TOP AGENTS BY ZIP
+ * CHECKPOINT: Updated to pass optional expired listing agent details to the RPC
+ */
+export const fetchTopAgentsByZip = async (
+  zip: string, 
+  agentName?: string, 
+  agentPhone?: string
+): Promise<ZipTopAgent[]> => {
   if (!zip) return [];
   const normalizedZip = zip.toString().padStart(5, '0');
   try {
     const { data, error } = await supabase.rpc('get_top_40_agents_by_zip_v5', {
       p_zip: normalizedZip,
       p_limit: 3,
-      p_offset: 0
+      p_offset: 0,
+      p_expired_list_agent_name: agentName || null,
+      p_expired_list_agent_phone: agentPhone || null
     });
-    if (error) return [];
+    
+    // DEBUG LOG: Response from the partner retrieval RPC
+    console.log("RPC get_top_40_agents_by_zip_v5 RESPONSE:", data);
+    
+    if (error) {
+      console.error("[RPC Error] get_top_40_agents_by_zip_v5:", error.message);
+      return [];
+    }
     return data as ZipTopAgent[];
   } catch (err) {
+    console.error("fetchTopAgentsByZip failed:", err);
     return [];
   }
 };

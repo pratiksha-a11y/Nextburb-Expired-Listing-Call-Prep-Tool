@@ -21,7 +21,12 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
       if (lead.townZips && lead.townZips[0]) {
         setIsLoadingTop(true);
         try {
-          const results = await fetchTopAgentsByZip(lead.townZips[0]);
+          // CHECKPOINT: Passing expired listing agent name and phone to the partner retrieval function
+          const results = await fetchTopAgentsByZip(
+            lead.townZips[0],
+            lead.listAgentName,
+            lead.listAgentPhone
+          );
           setZipTopAgents(results);
         } catch (err) {
           console.error("Failed to load zip top agents:", err);
@@ -58,7 +63,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
     setShowAllActivity(false);
     loadTopAgents();
     loadPrevPerformance();
-  }, [lead.townZips, lead.listAgentEmail, lead.listAgentPhone]);
+  }, [lead.townZips, lead.listAgentEmail, lead.listAgentPhone, lead.listAgentName]);
 
   const sortedActivity = prevPerformance?.nearby_activity 
     ? [...prevPerformance.nearby_activity].sort((a, b) => new Date(b.sold_date).getTime() - new Date(a.sold_date).getTime())
@@ -138,7 +143,9 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
 
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">ZIP Transactions (12mo)</p>
-                <p className="text-3xl font-black text-blue-600">{prevPerformance.performance.agent_txn_12mo_zip}</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-3xl font-black text-blue-600">{prevPerformance.performance.agent_txn_12mo_zip}</p>
+                </div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 tracking-tight">Verified local listings closed</p>
               </div>
 

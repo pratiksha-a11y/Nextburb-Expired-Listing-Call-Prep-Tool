@@ -280,14 +280,31 @@ const App: React.FC = () => {
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
         <div className="flex flex-col gap-2">
-          <a href={lead.zillowLink} target="_blank" rel="noopener noreferrer" className="group block w-fit">
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight group-hover:text-blue-600 transition-colors">
-              {lead.address.split(',')[0]}
-            </h1>
-          </a>
-          <a href={lead.zillowLink} target="_blank" rel="noopener noreferrer" className="group block w-fit">
-            <p className="text-sm font-medium text-slate-500 group-hover:text-blue-500 transition-colors">{lead.address}</p>
-          </a>
+          <div className="flex flex-col gap-2">
+            <a href={lead.zillowLink} target="_blank" rel="noopener noreferrer" className="group block w-fit">
+              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight group-hover:text-blue-600 transition-colors">
+                {lead.address.split(',')[0]}
+              </h1>
+            </a>
+            <a href={lead.zillowLink} target="_blank" rel="noopener noreferrer" className="group block w-fit">
+              <p className="text-sm font-medium text-slate-500 group-hover:text-blue-500 transition-colors">{lead.address}</p>
+            </a>
+          </div>
+
+          {/* CHECKPOINT: View Top Agents Redirect Button */}
+          <div className="pt-2">
+            <a 
+              href={`https://data.nextburb.com/agent/agent-match/#/agent/agent-match/Find_Agents?zip=${lead.townZips[0] || ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black uppercase tracking-[0.1em] rounded-xl shadow-lg shadow-blue-200 transition-all transform active:scale-[0.98] w-fit"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              View Top Agents for {lead.address.split(',')[0]}
+            </a>
+          </div>
         </div>
 
         <nav className="flex gap-1 border-b border-slate-200 overflow-x-auto no-scrollbar">
