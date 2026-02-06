@@ -70,7 +70,7 @@ export const fetchCmaComps = async (zipCode: string, origListPrice: number) => {
   try {
     const { data, error } = await supabase
       .from('email_listing_service_mlsoldsolddata')
-      .select('street_address, city, state, zip_code, bed, bath, close_date, current_price, orig_list_price, list_agent_name, list_agent_phone')
+      .select('address, street_address, city, state, zip_code, bed, bath, close_date, current_price, orig_list_price, list_agent_name, list_agent_phone')
       .eq('zip_code', normalizedZip)
       .gte('close_date', oneYearAgoStr)
       .limit(100); 
@@ -78,7 +78,7 @@ export const fetchCmaComps = async (zipCode: string, origListPrice: number) => {
     if (error || !data) return [];
 
     return data.map(row => ({
-      address: row.street_address || 'Unknown Address',
+      address: row.address || row.street_address || 'Unknown Address',
       city: row.city || '',
       state: row.state || '',
       beds: Number(row.bed) || 0,
@@ -100,36 +100,53 @@ export const fetchCmaComps = async (zipCode: string, origListPrice: number) => {
 
 /**
  * FETCH TOP AGENTS BY ZIP
- * CHECKPOINT: Updated to pass optional expired listing agent details to the RPC
+ * Optimization: Added retry logic to handle database statement timeouts.
  */
 export const fetchTopAgentsByZip = async (
   zip: string, 
   agentName?: string, 
-  agentPhone?: string
+  agentPhone?: string,
+  retries = 2
 ): Promise<ZipTopAgent[]> => {
   if (!zip) return [];
   const normalizedZip = zip.toString().padStart(5, '0');
-  try {
-    const { data, error } = await supabase.rpc('get_top_40_agents_by_zip_v5', {
-      p_zip: normalizedZip,
-      p_limit: 3,
-      p_offset: 0,
-      p_expired_list_agent_name: agentName || null,
-      p_expired_list_agent_phone: agentPhone || null
-    });
-    
-    // DEBUG LOG: Response from the partner retrieval RPC
-    console.log("RPC get_top_40_agents_by_zip_v5 RESPONSE:", data);
-    
-    if (error) {
-      console.error("[RPC Error] get_top_40_agents_by_zip_v5:", error.message);
-      return [];
+  
+  const attempt = async (remaining: number): Promise<ZipTopAgent[]> => {
+    try {
+      const { data, error } = await supabase.rpc('get_top_40_agents_by_zip_v5', {
+        p_zip: normalizedZip,
+        p_limit: 3,
+        p_offset: 0,
+        p_expired_list_agent_name: agentName || null,
+        p_expired_list_agent_phone: agentPhone || null
+      });
+      
+      if (error) {
+        // Specifically check for timeout errors
+        const isTimeout = error.message?.toLowerCase().includes('timeout') || 
+                          error.code === '57014' || // Postgres statement_timeout
+                          error.message?.toLowerCase().includes('canceling statement');
+
+        if (isTimeout && remaining > 0) {
+          console.warn(`RPC Timeout. Retrying... (${remaining} left)`);
+          // Exponential backoff: 1s, then 2s
+          await new Promise(resolve => setTimeout(resolve, (3 - remaining) * 1000));
+          return attempt(remaining - 1);
+        }
+        
+        console.error("[RPC Error] get_top_40_agents_by_zip_v5:", error.message);
+        throw error;
+      }
+      return (data as ZipTopAgent[]) || [];
+    } catch (err) {
+      if (remaining > 0) {
+        return attempt(remaining - 1);
+      }
+      throw err;
     }
-    return data as ZipTopAgent[];
-  } catch (err) {
-    console.error("fetchTopAgentsByZip failed:", err);
-    return [];
-  }
+  };
+
+  return attempt(retries);
 };
 
 /**

@@ -105,6 +105,36 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * CHECKPOINT: DEEP LINK SUPPORT
+   * Reads 'address' query parameter on load and triggers search logic.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const addressParam = params.get('address');
+    
+    if (addressParam) {
+      const decodedAddress = decodeURIComponent(addressParam).trim();
+      if (decodedAddress.length >= 3) {
+        const performDeepLinkSearch = async () => {
+          setIsSearching(true);
+          try {
+            const results = await searchSupabaseAddresses(decodedAddress);
+            if (results && results.length > 0) {
+              // Automatically select the best match found via RPC
+              handleSelection(results[0]);
+            }
+          } catch (err) {
+            console.error("Deep link search failed:", err);
+          } finally {
+            setIsSearching(false);
+          }
+        };
+        performDeepLinkSearch();
+      }
+    }
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!showSuggestions || (suggestions.length === 0 && !isSearching)) return;
 

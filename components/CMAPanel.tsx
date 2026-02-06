@@ -11,21 +11,18 @@ interface CMAPanelProps {
 const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
   const allCompsFromZip = lead.cma?.comps || [];
   const subjectZip = lead.townZips && lead.townZips[0];
-  const subjectOrigPrice = lead.originalListPrice || 0;
-  
-  // FALLBACK LOGIC: Use originalListPrice if finalListPrice is 0
-  const subjectFinalAsk = lead.finalListPrice || subjectOrigPrice;
+  const anchorPrice = lead.originalListPrice || 0;
   
   // Identify if searched property is in Texas (TX)
   const isTexasLead = lead.address.split(',').some(part => part.trim().toUpperCase() === 'TX') || 
                       lead.address.toUpperCase().includes(', TX ');
 
-  // Progressive Filtering Logic
+  // Filtering Logic: Strict ±5% based on orig_list_price
   const { displayedComps, activeTier } = useMemo(() => {
     const isSameZip = (c: Comp) => !subjectZip || (c.zip ? String(c.zip).padStart(5, '0') : '') === subjectZip;
     const sameZipComps = allCompsFromZip.filter(isSameZip);
 
-    // TX Exception: Always show full market view
+    // TX Exception: Always show full market view (Preserving existing logic per "Do not change other logic" instruction)
     if (isTexasLead) {
       return { 
         displayedComps: sameZipComps, 
@@ -33,30 +30,16 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
       };
     }
 
-    // Step 1: ±5% Price Range
-    const tier1 = sameZipComps.filter(c => 
-      c.soldPrice >= subjectFinalAsk * 0.95 && c.soldPrice <= subjectFinalAsk * 1.05
+    // Strict Filtering: ±5% of orig_list_price as requested
+    const filtered = sameZipComps.filter(c => 
+      c.soldPrice >= anchorPrice * 0.95 && c.soldPrice <= anchorPrice * 1.05
     );
-    if (tier1.length > 0) return { displayedComps: tier1, activeTier: '±5% Price Match' };
 
-    // Step 2: ±10% Price Range (Fallback 1)
-    const tier2 = sameZipComps.filter(c => 
-      c.soldPrice >= subjectFinalAsk * 0.90 && c.soldPrice <= subjectFinalAsk * 1.10
-    );
-    if (tier2.length > 0) return { displayedComps: tier2, activeTier: '±10% Price Match' };
-
-    // Step 3: +15% / −10% Range (Fallback 2)
-    const tier3 = sameZipComps.filter(c => 
-      c.soldPrice >= subjectFinalAsk * 0.90 && c.soldPrice <= subjectFinalAsk * 1.15
-    );
-    if (tier3.length > 0) return { displayedComps: tier3, activeTier: '+15% / -10% Price Match' };
-
-    // Step 4: ZIP-Only Fallback
     return { 
-      displayedComps: sameZipComps, 
-      activeTier: 'ZIP Code Full Market' 
+      displayedComps: filtered, 
+      activeTier: 'Strict ±5% Price Match' 
     };
-  }, [allCompsFromZip, subjectZip, subjectFinalAsk, isTexasLead]);
+  }, [allCompsFromZip, subjectZip, anchorPrice, isTexasLead]);
   
   // Sort comps by sold date (latest first)
   const sortedComps = [...displayedComps].sort((a, b) => {
@@ -69,6 +52,8 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
   const prices = displayedComps.map(c => c.soldPrice || 0);
   const medianPrice = computeMedian(prices);
   
+  // Compare the final ask (what the seller was last at) against the neighborhood median for their tier
+  const subjectFinalAsk = lead.finalListPrice || anchorPrice;
   const priceDelta = subjectFinalAsk - medianPrice;
   const priceDeltaPct = medianPrice > 0 ? ((priceDelta / medianPrice) * 100).toFixed(1) : '0';
 
@@ -78,8 +63,8 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8 pb-12">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Subject Final Ask</p>
-          <p className="text-2xl font-black text-slate-900">${(subjectFinalAsk).toLocaleString()}</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Subject Orig Price</p>
+          <p className="text-2xl font-black text-slate-900">${(anchorPrice).toLocaleString()}</p>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -112,7 +97,7 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
             <p className="text-[10px] font-medium text-slate-400 mt-0.5">
               {isTexasLead 
                 ? "Showing all sold properties in this ZIP code (Price range filtering disabled for TX)" 
-                : `Selection Tier: ${activeTier} ($${subjectFinalAsk.toLocaleString()} Base)`}
+                : `Selection Tier: ${activeTier} ($${anchorPrice.toLocaleString()} Base)`}
             </p>
           </div>
           <div className="flex gap-2">
@@ -125,7 +110,6 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
                 <th className="px-6 py-4 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Address</th>
-                <th className="px-6 py-4 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Beds/Baths</th>
                 <th className="px-6 py-4 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Sold Date</th>
                 <th className="px-6 py-4 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Sold Price</th>
                 <th className="px-6 py-4 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Agent</th>
@@ -133,23 +117,31 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {sortedComps.length > 0 ? sortedComps.map((comp, idx) => {
-                const stateAndZip = `${comp.state || ''} ${comp.zip || subjectZip || ''}`.trim();
-                const addressParts = [comp.address, comp.city, stateAndZip].filter(Boolean);
-                const fullFormattedAddress = addressParts.join(', ').replace(/\s+/g, ' ').trim();
+                // Heuristic to check if 'address' field contains a full formatted address
+                const rawAddress = comp.address || '';
+                const isFullAddress = rawAddress.includes(',') && rawAddress.length > 15;
+                
+                // Construct fallback if the address field is just a street
+                const fallbackAddress = [
+                  comp.address, 
+                  comp.city, 
+                  `${comp.state || ''} ${comp.zip || subjectZip || ''}`.trim()
+                ].filter(Boolean).join(', ').replace(/\s+/g, ' ').trim();
+
+                const zillowLinkAddress = isFullAddress ? rawAddress : fallbackAddress;
                 
                 return (
                   <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <a 
-                        href={getZillowLink(fullFormattedAddress)} 
+                        href={getZillowLink(zillowLinkAddress)} 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="font-semibold text-slate-900 hover:text-blue-600 hover:underline transition-all"
                       >
-                        {fullFormattedAddress}
+                        {rawAddress}
                       </a>
                     </td>
-                    <td className="px-6 py-4 text-slate-600 font-medium">{comp.beds}bd / {comp.baths}ba</td>
                     <td className="px-6 py-4 text-slate-500">{formatDateDisplay(comp.soldDate)}</td>
                     <td className="px-6 py-4 font-bold text-slate-900">
                       ${(comp.soldPrice || 0).toLocaleString()}
@@ -162,8 +154,8 @@ const CMAPanel: React.FC<CMAPanelProps> = ({ lead }) => {
                 );
               }) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
-                    No properties found in ZIP {subjectZip} for the last 12 months.
+                  <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">
+                    No properties found in ZIP {subjectZip} matching ±5% of the original list price.
                   </td>
                 </tr>
               )}

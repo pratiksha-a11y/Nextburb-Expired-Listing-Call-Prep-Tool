@@ -13,53 +13,55 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
   const [prevPerformance, setPrevPerformance] = useState<PreviousAgentPerformance | null>(null);
   const [isLoadingTop, setIsLoadingTop] = useState(false);
   const [isLoadingPrev, setIsLoadingPrev] = useState(false);
+  const [topLoadError, setTopLoadError] = useState<string | null>(null);
   const [prevLoadError, setPrevLoadError] = useState<string | null>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
 
-  useEffect(() => {
-    const loadTopAgents = async () => {
-      if (lead.townZips && lead.townZips[0]) {
-        setIsLoadingTop(true);
-        try {
-          // CHECKPOINT: Passing expired listing agent name and phone to the partner retrieval function
-          const results = await fetchTopAgentsByZip(
-            lead.townZips[0],
-            lead.listAgentName,
-            lead.listAgentPhone
-          );
-          setZipTopAgents(results);
-        } catch (err) {
-          console.error("Failed to load zip top agents:", err);
-        } finally {
-          setIsLoadingTop(false);
-        }
-      }
-    };
-
-    const loadPrevPerformance = async () => {
-      const email = lead.listAgentEmail;
-      const phone = lead.listAgentPhone;
-      const zip = lead.townZips && lead.townZips[0];
-
-      if (!email || !phone || !zip) {
-        setPrevPerformance(null);
-        return;
-      }
-
-      setIsLoadingPrev(true);
-      setPrevLoadError(null);
-      
+  const loadTopAgents = async () => {
+    if (lead.townZips && lead.townZips[0]) {
+      setIsLoadingTop(true);
+      setTopLoadError(null);
       try {
-        const result = await fetchPreviousAgentPerformance(email, phone, zip);
-        setPrevPerformance(result);
+        const results = await fetchTopAgentsByZip(
+          lead.townZips[0],
+          lead.listAgentName,
+          lead.listAgentPhone
+        );
+        setZipTopAgents(results);
       } catch (err: any) {
-        console.error("Failed to load previous agent performance:", err);
-        setPrevLoadError("Analysis temporarily unavailable.");
+        console.error("Failed to load zip top agents:", err);
+        setTopLoadError("Local rankings calculation timed out. The server may be under heavy load.");
       } finally {
-        setIsLoadingPrev(false);
+        setIsLoadingTop(false);
       }
-    };
+    }
+  };
 
+  const loadPrevPerformance = async () => {
+    const email = lead.listAgentEmail;
+    const phone = lead.listAgentPhone;
+    const zip = lead.townZips && lead.townZips[0];
+
+    if (!email || !phone || !zip) {
+      setPrevPerformance(null);
+      return;
+    }
+
+    setIsLoadingPrev(true);
+    setPrevLoadError(null);
+    
+    try {
+      const result = await fetchPreviousAgentPerformance(email, phone, zip);
+      setPrevPerformance(result);
+    } catch (err: any) {
+      console.error("Failed to load previous agent performance:", err);
+      setPrevLoadError("Analysis temporarily unavailable.");
+    } finally {
+      setIsLoadingPrev(false);
+    }
+  };
+
+  useEffect(() => {
     setShowAllActivity(false);
     loadTopAgents();
     loadPrevPerformance();
@@ -219,9 +221,19 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Top 3 Performing Agents</p>
             </div>
           </div>
-          <span className="inline-flex items-center text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-1.5 rounded-full uppercase tracking-widest border border-blue-100 self-start sm:self-center">
-            Verified local experts in {lead.townZips[0]}
-          </span>
+          <div className="flex items-center gap-3">
+            {topLoadError && (
+              <button 
+                onClick={() => loadTopAgents()}
+                className="text-[10px] font-black text-blue-600 hover:text-blue-700 underline uppercase tracking-widest"
+              >
+                Retry Search
+              </button>
+            )}
+            <span className="inline-flex items-center text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-1.5 rounded-full uppercase tracking-widest border border-blue-100 self-start sm:self-center">
+              Verified local experts in {lead.townZips[0]}
+            </span>
+          </div>
         </div>
         
         <div className="overflow-x-auto">
@@ -243,6 +255,25 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Ranking Local Leaders...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : topLoadError ? (
+                <tr>
+                  <td colSpan={6} className="px-8 py-20 text-center">
+                    <div className="flex flex-col items-center gap-3 max-w-sm mx-auto">
+                      <div className="bg-red-50 p-3 rounded-full mb-2">
+                        <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <span className="text-[13px] font-bold text-slate-600">{topLoadError}</span>
+                      <button 
+                        onClick={() => loadTopAgents()}
+                        className="mt-2 bg-blue-600 text-white px-6 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                      >
+                        Retry Search
+                      </button>
                     </div>
                   </td>
                 </tr>

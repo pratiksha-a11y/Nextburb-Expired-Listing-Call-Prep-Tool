@@ -1,3 +1,4 @@
+
 /**
  * Formats a ISO date string or database timestamp into a clean YYYY-MM-DD display format.
  * Safe for strings like "2025-02-25T00:00:00+00:00" or "2025-12-04 00:00:00+00".
