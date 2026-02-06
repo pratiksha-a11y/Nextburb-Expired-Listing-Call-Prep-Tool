@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { getDefaultLead, searchSupabaseAddresses, transformDbToLead, fetchCmaComps } from './data/dataProvider';
+import { supabase } from './lib/supabase';
 import { Lead, Confidence } from './types';
 import SummaryPanel from './components/SummaryPanel';
 import KeyTalkingPointsPanel from './components/KeyTalkingPointsPanel';
@@ -107,32 +107,60 @@ const App: React.FC = () => {
 
   /**
    * CHECKPOINT: DEEP LINK SUPPORT
-   * Reads 'address' query parameter on load and triggers search logic.
+   * Reads 'id' or 'address' query parameter on load and triggers search logic.
+   * Priority: 'id' parameter takes priority over 'address'.
    */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const idParam = params.get('id');
     const addressParam = params.get('address');
     
-    if (addressParam) {
-      const decodedAddress = decodeURIComponent(addressParam).trim();
-      if (decodedAddress.length >= 3) {
-        const performDeepLinkSearch = async () => {
-          setIsSearching(true);
-          try {
-            const results = await searchSupabaseAddresses(decodedAddress);
-            if (results && results.length > 0) {
-              // Automatically select the best match found via RPC
-              handleSelection(results[0]);
-            }
-          } catch (err) {
-            console.error("Deep link search failed:", err);
-          } finally {
-            setIsSearching(false);
-          }
-        };
-        performDeepLinkSearch();
+    const performDeepLinkSearch = async (query: string) => {
+      setIsSearching(true);
+      try {
+        const results = await searchSupabaseAddresses(query);
+        if (results && results.length > 0) {
+          // Automatically select the best match found via existing search flow
+          handleSelection(results[0]);
+        }
+      } catch (err) {
+        console.error("Deep link search failed:", err);
+      } finally {
+        setIsSearching(false);
       }
-    }
+    };
+
+    const initDeepLink = async () => {
+      if (idParam) {
+        setIsSearching(true);
+        try {
+          // Resolve ID to address using the database record
+          const { data, error } = await supabase
+            .from('calling_personalization_expired_data')
+            .select('street_address, city, state, zip_code')
+            .eq('id', idParam)
+            .maybeSingle();
+          
+          if (data && !error) {
+            const resolvedAddress = `${data.street_address || ''}, ${data.city || ''}, ${data.state || ''} ${data.zip_code || ''}`.replace(/\s+/g, ' ').trim();
+            if (resolvedAddress.length >= 3) {
+              await performDeepLinkSearch(resolvedAddress);
+            }
+          }
+        } catch (err) {
+          console.error("Error resolving ID deep link:", err);
+        } finally {
+          setIsSearching(false);
+        }
+      } else if (addressParam) {
+        const decodedAddress = decodeURIComponent(addressParam).trim();
+        if (decodedAddress.length >= 3) {
+          await performDeepLinkSearch(decodedAddress);
+        }
+      }
+    };
+
+    initDeepLink();
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
