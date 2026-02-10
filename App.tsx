@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { getDefaultLead, searchSupabaseAddresses, transformDbToLead, fetchCmaComps } from './data/dataProvider';
 import { supabase } from './lib/supabase';
@@ -34,7 +35,16 @@ const App: React.FC = () => {
   const searchRef = useRef<HTMLDivElement>(null);
   const welcomeSearchRef = useRef<HTMLDivElement>(null);
 
-  const LOGO_PNG = "https://nextburb.com/wp-content/uploads/2023/08/nextburb-logo.svg";
+  const LOGO_PNG = "https://www.nextburb.com/static/images/logo.png";
+
+  const handleLogoClick = () => {
+    if (view === 'welcome') {
+      window.location.reload();
+    } else {
+      setView('welcome');
+      setSearch('');
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -58,6 +68,10 @@ const App: React.FC = () => {
       setHasError(false);
       return;
     }
+
+    const termParts = term.split(',').map(p => p.trim());
+    const isExactMatch = lead && termParts[0] === lead.address.split(',')[0].trim();
+    if (isExactMatch) return;
 
     const timer = setTimeout(async () => {
       setIsSearching(true);
@@ -105,11 +119,6 @@ const App: React.FC = () => {
     }
   };
 
-  /**
-   * CHECKPOINT: DEEP LINK SUPPORT
-   * Reads 'id' or 'address' query parameter on load and triggers search logic.
-   * Priority: 'id' parameter takes priority over 'address'.
-   */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const idParam = params.get('id');
@@ -120,7 +129,6 @@ const App: React.FC = () => {
       try {
         const results = await searchSupabaseAddresses(query);
         if (results && results.length > 0) {
-          // Automatically select the best match found via existing search flow
           handleSelection(results[0]);
         }
       } catch (err) {
@@ -134,12 +142,22 @@ const App: React.FC = () => {
       if (idParam) {
         setIsSearching(true);
         try {
-          // Resolve ID to address using the database record
-          const { data, error } = await supabase
+          let query = supabase
             .from('calling_personalization_expired_data')
-            .select('street_address, city, state, zip_code')
-            .eq('id', idParam)
-            .maybeSingle();
+            .select('street_address, city, state, zip_code');
+          
+          const isOE = idParam.endsWith('OE');
+          const isDE = idParam.endsWith('DE');
+
+          if (isOE || isDE) {
+            const tableIdPortion = idParam.slice(0, -2);
+            const resolvedType = isOE ? 'old_expired' : 'daily_expired';
+            query = query.eq('table_id', tableIdPortion).eq('expired_type', resolvedType);
+          } else {
+            query = query.eq('id', idParam);
+          }
+
+          const { data, error } = await query.maybeSingle();
           
           if (data && !error) {
             const resolvedAddress = `${data.street_address || ''}, ${data.city || ''}, ${data.state || ''} ${data.zip_code || ''}`.replace(/\s+/g, ' ').trim();
@@ -248,14 +266,20 @@ const App: React.FC = () => {
   if (view === 'welcome') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-x-hidden">
-        <header className="w-full pt-8 pb-4 md:pt-10 md:pb-6 px-6 md:px-12 lg:absolute lg:top-0 lg:left-0 lg:w-auto z-50">
+        <header className="w-full pt-8 pb-4 md:pt-10 md:pb-6 px-6 md:px-12 lg:absolute lg:top-0 lg:left-0 lg:w-auto z-[150]">
           <div className="flex flex-col items-center lg:items-start space-y-1 md:space-y-2">
-            <img 
-              src={LOGO_PNG} 
-              alt="Nextburb Logo" 
-              className="h-10 md:h-12 lg:h-14 w-auto object-contain transition-all duration-300" 
-            />
-            <p className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase tracking-[0.25em] opacity-60 text-center lg:text-left">
+            <button 
+              onClick={handleLogoClick} 
+              className="hover:opacity-80 transition-opacity focus:outline-none shrink-0 cursor-pointer"
+              aria-label="Reload application"
+            >
+              <img 
+                src={LOGO_PNG} 
+                alt="Nextburb Logo" 
+                className="h-10 md:h-12 lg:h-14 w-auto object-contain transition-all duration-300" 
+              />
+            </button>
+            <p className="text-[7px] md:text-[8px] font-bold text-blue-600/70 uppercase tracking-[0.3em] text-center lg:text-left">
               Data-Driven Real Estate Intelligence
             </p>
           </div>
@@ -320,7 +344,11 @@ const App: React.FC = () => {
       <header className="sticky top-0 z-[100] bg-white border-b border-slate-200 shadow-sm p-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-1">
-            <button onClick={() => setView('welcome')} className="shrink-0 hover:opacity-80 transition-opacity">
+            <button 
+              onClick={handleLogoClick} 
+              className="shrink-0 hover:opacity-80 transition-opacity focus:outline-none cursor-pointer"
+              aria-label="Back to welcome screen"
+            >
               <img src={LOGO_PNG} alt="Nextburb Logo" className="h-7 md:h-8 w-auto object-contain" />
             </button>
             <div className="flex-1 max-w-md">
@@ -349,7 +377,6 @@ const App: React.FC = () => {
             </a>
           </div>
 
-          {/* CHECKPOINT: View Top Agents Redirect Button */}
           <div className="pt-2">
             <a 
               href={`https://data.nextburb.com/agent/agent-match/#/agent/agent-match/Find_Agents?zip=${lead.townZips[0] || ''}`}
@@ -377,7 +404,7 @@ const App: React.FC = () => {
           ))}
         </nav>
 
-        {activeTab !== 'Outreach' && <KeyTalkingPointsPanel lead={lead} />}
+        {activeTab !== 'Outreach' && activeTab !== 'Agent' && <KeyTalkingPointsPanel lead={lead} />}
 
         <div className="min-h-[500px]">
           {activeTab === 'Home' && (

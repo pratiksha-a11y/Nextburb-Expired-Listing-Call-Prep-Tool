@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Lead, ZipTopAgent, PreviousAgentPerformance } from '../types';
 import { formatDateDisplay, getZillowLink } from '../utils/formatters';
 import { fetchTopAgentsByZip, fetchPreviousAgentPerformance } from '../data/dataProvider';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface AgentPanelProps {
   lead: Lead;
@@ -17,6 +18,11 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
   const [prevLoadError, setPrevLoadError] = useState<string | null>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
 
+  // Agent Insights State
+  const [agentInsights, setAgentInsights] = useState<string[]>([]);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [insightsStatus, setInsightsStatus] = useState<string | null>(null);
+
   const loadTopAgents = async () => {
     if (lead.townZips && lead.townZips[0]) {
       setIsLoadingTop(true);
@@ -30,7 +36,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
         setZipTopAgents(results);
       } catch (err: any) {
         console.error("Failed to load zip top agents:", err);
-        setTopLoadError("Local rankings calculation timed out. The server may be under heavy load.");
+        setTopLoadError("Local rankings calculation timed out.");
       } finally {
         setIsLoadingTop(false);
       }
@@ -61,11 +67,96 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
     }
   };
 
+  // Generate Agent Insights via Gemini or Fallback
+  const generateAgentInsights = async () => {
+    if (!prevPerformance || zipTopAgents.length === 0) return;
+
+    setIsLoadingInsights(true);
+    setInsightsStatus(null);
+
+    // Code-based Fallback Logic
+    const generateFallback = () => {
+      const insights = [];
+      const perf = prevPerformance.performance;
+      const topAgent = zipTopAgents[0];
+
+      // Insight 1: DOM Analysis
+      if (perf.avg_dom_agent > perf.avg_dom_zip) {
+        insights.push(`The previous agent's average DOM of ${Math.round(perf.avg_dom_agent)} days is ${Math.round((perf.avg_dom_agent/perf.avg_dom_zip - 1) * 100)}% slower than the ZIP median.`);
+      } else {
+        insights.push(`The listing agent maintains a competitive speed profile in this ZIP, suggesting the expiry was likely due to specific property friction rather than general pace.`);
+      }
+
+      // Insight 2: Pricing Strategy
+      if (perf.price_reduction_pct_agent > perf.price_reduction_pct_zip) {
+        insights.push(`High price adjustment frequency (${Math.round(perf.price_reduction_pct_agent)}%) indicates a consistent pattern of initial overvaluation in ${lead.townZips[0]}.`);
+      } else {
+        insights.push(`The previous agent's pricing adjustments align with market norms, pointing toward a need for better digital presentation or buyer outreach.`);
+      }
+
+      // Insight 3: Competitive Benchmark
+      if (topAgent) {
+        insights.push(`Local market leaders like ${topAgent.agent_name} close properties in this area with a median DOM of ${topAgent.median_dom_last_3yr_seller} days—nearly ${Math.abs(Math.round(perf.avg_dom_agent - topAgent.median_dom_last_3yr_seller))} days faster than the current experience.`);
+      }
+
+      return insights;
+    };
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `You are a real estate performance analyst. Generate 3 professional insights comparing the listing agent's performance to the ZIP code leaders.
+      
+      Agent Name: ${lead.listAgentName || 'Unknown'}
+      Agent Stats: Avg DOM: ${prevPerformance.performance.avg_dom_agent}, Market DOM: ${prevPerformance.performance.avg_dom_zip}, Price Reductions: ${prevPerformance.performance.price_reduction_pct_agent}%.
+      Local Leaders: ${zipTopAgents.slice(0, 2).map(a => `${a.agent_name} (DOM: ${a.median_dom_last_3yr_seller})`).join(', ')}.
+      Property: ${lead.address} (${lead.propertyType}).
+      
+      Strict Requirements:
+      - Strictly 3 concise sentences.
+      - Focused on data-driven performance deltas.
+      - Return JSON format: {"insights": ["string", "string", "string"]}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              insights: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            },
+            required: ["insights"]
+          }
+        }
+      });
+
+      const data = JSON.parse(response.text || "{}");
+      setAgentInsights(data.insights || generateFallback());
+    } catch (error: any) {
+      console.error("[Agent Insights AI Error]", error);
+      setAgentInsights(generateFallback());
+      setInsightsStatus("Providing data-derived performance summary.");
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  };
+
   useEffect(() => {
     setShowAllActivity(false);
     loadTopAgents();
     loadPrevPerformance();
   }, [lead.townZips, lead.listAgentEmail, lead.listAgentPhone, lead.listAgentName]);
+
+  // Trigger insights once data is available
+  useEffect(() => {
+    if (prevPerformance && zipTopAgents.length > 0) {
+      generateAgentInsights();
+    }
+  }, [prevPerformance, zipTopAgents]);
 
   const sortedActivity = prevPerformance?.nearby_activity 
     ? [...prevPerformance.nearby_activity].sort((a, b) => new Date(b.sold_date).getTime() - new Date(a.sold_date).getTime())
@@ -74,8 +165,53 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ lead }) => {
   const displayedActivity = showAllActivity ? sortedActivity : sortedActivity.slice(0, 10);
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-12 pb-16">
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8 pb-16">
       
+      {/* 0. Agent Insights AI Section (Replaces the global one for this tab) */}
+      {(isLoadingInsights || agentInsights.length > 0) && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-50 p-1.5 rounded-lg">
+                <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <h3 className="font-bold text-slate-900 text-[13px] uppercase tracking-wide">Agent Insights</h3>
+            </div>
+            {insightsStatus && (
+              <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">{insightsStatus}</span>
+            )}
+            {isLoadingInsights && (
+              <span className="flex items-center gap-2 text-[11px] font-bold text-indigo-600 uppercase animate-pulse">
+                <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>
+                Analyzing Agent Data...
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {isLoadingInsights ? (
+              [1, 2, 3].map((i) => (
+                <div key={i} className="flex gap-4 animate-pulse">
+                  <span className="shrink-0 w-1 h-12 bg-slate-100 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 bg-slate-100 rounded w-full"></div>
+                    <div className="h-3 bg-slate-100 rounded w-4/5"></div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              agentInsights.map((insight, idx) => (
+                <div key={idx} className="flex gap-4 group">
+                  <span className="shrink-0 w-1 h-auto bg-indigo-500 rounded-full transition-all group-hover:scale-y-110" />
+                  <p className="text-[13px] text-slate-600 leading-relaxed font-semibold">{insight}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 1. Previous Agent Performance Summary Section */}
       <div className="space-y-6">
         <div className="flex items-center gap-3">

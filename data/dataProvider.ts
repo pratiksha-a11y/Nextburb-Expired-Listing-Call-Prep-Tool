@@ -1,12 +1,12 @@
 
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseKey } from "../lib/supabase";
 import { Lead, Confidence, AgentPerformance, TopAgent, Comp, ZipTopAgent, PreviousAgentPerformance } from "../types";
 import sampleLead from "../sampleLead";
 import { getZillowLink } from "../utils/formatters";
 
 /**
  * ULTRA-HIGH PERFORMANCE SEARCH
- * Optimized for 10,000,000+ rows.
+ * Optimized for 10,000,000+ rows using PostgREST.
  */
 export const searchSupabaseAddresses = async (query: string) => {
   const cleanQuery = query?.trim();
@@ -60,6 +60,10 @@ export const searchSupabaseAddresses = async (query: string) => {
   }
 };
 
+/**
+ * FETCH CMA COMPS
+ * Basic retrieval of sold data for comparative analysis.
+ */
 export const fetchCmaComps = async (zipCode: string, origListPrice: number) => {
   if (!zipCode || !origListPrice) return [];
   const normalizedZip = zipCode.toString().padStart(5, '0');
@@ -99,54 +103,50 @@ export const fetchCmaComps = async (zipCode: string, origListPrice: number) => {
 };
 
 /**
- * FETCH TOP AGENTS BY ZIP
- * Optimization: Added retry logic to handle database statement timeouts.
+ * FETCH TOP AGENTS VIA EDGE FUNCTION
+ * 
+ * New endpoint: top_agents_v_m
+ * Authentication: None required.
  */
 export const fetchTopAgentsByZip = async (
-  zip: string, 
-  agentName?: string, 
-  agentPhone?: string,
-  retries = 2
+  zip_code: string, 
+  expired_list_agent_name?: string, 
+  expired_list_agent_phone?: string
 ): Promise<ZipTopAgent[]> => {
-  if (!zip) return [];
-  const normalizedZip = zip.toString().padStart(5, '0');
+  if (!zip_code) return [];
   
-  const attempt = async (remaining: number): Promise<ZipTopAgent[]> => {
-    try {
-      const { data, error } = await supabase.rpc('get_top_40_agents_by_zip_v5', {
-        p_zip: normalizedZip,
-        p_limit: 3,
-        p_offset: 0,
-        p_expired_list_agent_name: agentName || null,
-        p_expired_list_agent_phone: agentPhone || null
-      });
-      
-      if (error) {
-        // Specifically check for timeout errors
-        const isTimeout = error.message?.toLowerCase().includes('timeout') || 
-                          error.code === '57014' || // Postgres statement_timeout
-                          error.message?.toLowerCase().includes('canceling statement');
+  try {
+    // 🌐 Call unauthenticated Edge Function
+    const res = await fetch(
+      "https://vdxdmhtkvxhssuhdxkaw.supabase.co/functions/v1/top_agents_v_m",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          zip_code,
+          limit: 3,
+          offset: 0,
+          expired_list_agent_phone: expired_list_agent_phone || null,
+          expired_list_agent_name: expired_list_agent_name || null,
+        }),
+      }
+    );
 
-        if (isTimeout && remaining > 0) {
-          console.warn(`RPC Timeout. Retrying... (${remaining} left)`);
-          // Exponential backoff: 1s, then 2s
-          await new Promise(resolve => setTimeout(resolve, (3 - remaining) * 1000));
-          return attempt(remaining - 1);
-        }
-        
-        console.error("[RPC Error] get_top_40_agents_by_zip_v5:", error.message);
-        throw error;
-      }
-      return (data as ZipTopAgent[]) || [];
-    } catch (err) {
-      if (remaining > 0) {
-        return attempt(remaining - 1);
-      }
-      throw err;
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`Edge Function Response Error [${res.status}]:`, errorText);
+      throw new Error(`Edge Function error: ${res.status} ${errorText}`);
     }
-  };
 
-  return attempt(retries);
+    const data = await res.json();
+    // The response structure contains an "agents" array which is UI compatible
+    return (data.agents as ZipTopAgent[]) || [];
+  } catch (err: any) {
+    console.error("Top Agents Fetch Error:", err);
+    throw err;
+  }
 };
 
 /**
@@ -160,12 +160,6 @@ export const fetchPreviousAgentPerformance = async (email: string, phone: string
   const p_agent_phone = phone.trim();
   const p_zip = zip.toString().padStart(5, '0');
 
-  console.log("RPC get_previous_agent_performance CALL:", {
-    p_agent_email,
-    p_agent_phone,
-    p_zip
-  });
-
   try {
     const { data, error } = await supabase.rpc('get_previous_agent_performance', {
       p_agent_email,
@@ -178,8 +172,6 @@ export const fetchPreviousAgentPerformance = async (email: string, phone: string
       return null;
     }
 
-    console.log("DEBUG: Raw RPC data received:", data);
-
     let rpcRoot = null;
     if (Array.isArray(data) && data.length > 0) {
       rpcRoot = data[0]?.get_previous_agent_performance || data[0];
@@ -187,10 +179,7 @@ export const fetchPreviousAgentPerformance = async (email: string, phone: string
       rpcRoot = (data as any).get_previous_agent_performance || data;
     }
 
-    console.log("RPC get_previous_agent_performance RESPONSE:", rpcRoot);
-
     if (!rpcRoot || (!rpcRoot.performance && !rpcRoot.nearby_activity)) {
-      console.warn("RPC response structure mismatch or empty data detected.", rpcRoot);
       return null;
     }
 
